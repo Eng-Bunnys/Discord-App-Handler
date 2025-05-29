@@ -1,32 +1,33 @@
 package org.bunnys.handler.utils.handler;
 
-import net.dv8tion.jda.api.JDA;
-import org.bunnys.handler.GBF;
+import net.dv8tion.jda.api.sharding.ShardManager;
 import org.bunnys.handler.utils.Logger;
 
+import java.util.List;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ShutdownManager {
-    public static void Shutdown() {
-        JDA jda = BotInitializer.getJDA();
-        if (jda != null) {
-            jda.shutdown();
+    private final ShardManager shardManager;
+    private final List<ThreadPoolExecutor> shardThreadPools;
+
+    public ShutdownManager(ShardManager shardManager, List<ThreadPoolExecutor> shardThreadPools) {
+        this.shardManager = shardManager;
+        this.shardThreadPools = shardThreadPools;
+    }
+
+    public void shutdown() {
+        shardManager.shutdown();
+        for (ThreadPoolExecutor pool : shardThreadPools) {
+            pool.shutdown();
             try {
-                if (!jda.awaitShutdown(2, TimeUnit.SECONDS)) {
-                    jda.shutdownNow();
+                if (!pool.awaitTermination(2, TimeUnit.SECONDS)) {
+                    pool.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                Logger.error("Interrupted during JDA shutdown: " + e.getMessage());
+                Logger.error("Interrupted during thread pool shutdown: " + e.getMessage());
                 Thread.currentThread().interrupt();
             }
-        }
-        GBF.SHARED_POOL.shutdown();
-        try {
-            if (!GBF.SHARED_POOL.awaitTermination(2, TimeUnit.SECONDS))
-                GBF.SHARED_POOL.shutdownNow();
-        } catch (InterruptedException e) {
-            Logger.error("Interrupted during thread pool shutdown: " + e.getMessage());
-            Thread.currentThread().interrupt();
         }
     }
 }

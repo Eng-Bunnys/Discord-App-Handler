@@ -6,15 +6,14 @@ import io.github.classgraph.ScanResult;
 import org.bunnys.handler.GBF;
 import org.bunnys.handler.utils.Logger;
 
+import java.lang.reflect.Constructor;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 
 public class EventLoader {
-    private static final Executor SHARED_POOL = GBF.SHARED_POOL;
-
-    public static List<Event> loadEvents(String packageName) {
+    public static List<Event> loadEvents(String packageName, GBF client, Executor shardPool) {
         if (packageName == null || packageName.isBlank()) {
             Logger.warning("Package name is null or blank. Skipping event loading.");
             return List.of();
@@ -39,7 +38,9 @@ public class EventLoader {
                         Class<?> cls = classInfo.loadClass();
                         if (Event.class.isAssignableFrom(cls)) {
                             long instanceStart = System.nanoTime();
-                            Event eventInstance = (Event) cls.getDeclaredConstructor().newInstance();
+                            // Use constructor with GBF parameter
+                            Constructor<?> constructor = cls.getDeclaredConstructor(GBF.class);
+                            Event eventInstance = (Event) constructor.newInstance(client);
                             long instanceEnd = System.nanoTime();
                             if ((instanceEnd - instanceStart) / 1_000_000 > 1) {
                                 Logger.warning("Slow instantiation for " + cls.getSimpleName() + ": " +
@@ -52,7 +53,7 @@ public class EventLoader {
                     }
                 });
                 return null;
-            }, SHARED_POOL).get();
+            }, shardPool).get();
 
             if (eventInstances.isEmpty()) {
                 Logger.warning("No events found in package: " + packageName);

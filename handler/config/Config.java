@@ -7,14 +7,13 @@ import org.bunnys.handler.utils.Logger;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executor;
 
 /**
  * Configuration class for the GBF Handler, optimized for immutability, thread-safety, and validation.
  * Uses a builder pattern for flexible instantiation and provides default values for all fields.
- * Maintains original method names for compatibility.
  */
 public class Config {
-    // Handler Features
     private final String version;
     private final boolean autoLogin;
     private final boolean logActions;
@@ -26,16 +25,17 @@ public class Config {
     private final List<UserSnowflake> developers;
     private final int timeoutSeconds;
     private final int retries;
+    private final int totalShards;
+    private final List<Executor> shardThreadPools;
 
-    // Bot Features
-    private volatile String token; // Only mutable field, thread-safe
+    private volatile String token;
     private final List<GatewayIntent> intents;
 
-    // Default values
     private static final String DEFAULT_VERSION = "1.0.0";
     private static final String DEFAULT_PREFIX = "!";
     private static final int DEFAULT_TIMEOUT_SECONDS = 10;
     private static final int DEFAULT_RETRIES = 3;
+    private static final int DEFAULT_TOTAL_SHARDS = 1;
 
     private Config(Builder builder) {
         this.token = builder.token;
@@ -51,9 +51,16 @@ public class Config {
         this.developers = List.copyOf(Objects.requireNonNullElse(builder.developers, Collections.emptyList()));
         this.timeoutSeconds = builder.timeoutSeconds > 0 ? builder.timeoutSeconds : DEFAULT_TIMEOUT_SECONDS;
         this.retries = builder.retries > 0 ? builder.retries : DEFAULT_RETRIES;
+        this.totalShards = builder.totalShards > 0 ? builder.totalShards : DEFAULT_TOTAL_SHARDS;
+        this.shardThreadPools = List.copyOf(Objects.requireNonNullElse(builder.shardThreadPools, Collections.emptyList()));
+
+        // Validate shard thread pools match total shards
+        if (!shardThreadPools.isEmpty() && shardThreadPools.size() != totalShards) {
+            throw new IllegalStateException("Number of shard thread pools (" + shardThreadPools.size() +
+                    ") must match total shards (" + totalShards + ")");
+        }
     }
 
-    // Builder Pattern for Config
     public static class Builder {
         private String token = null;
         private List<GatewayIntent> intents = Collections.emptyList();
@@ -68,6 +75,8 @@ public class Config {
         private List<UserSnowflake> developers = Collections.emptyList();
         private int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
         private int retries = DEFAULT_RETRIES;
+        private int totalShards = DEFAULT_TOTAL_SHARDS;
+        private List<Executor> shardThreadPools = Collections.emptyList();
 
         public Builder Token(String token) {
             this.token = token;
@@ -139,12 +148,29 @@ public class Config {
             return this;
         }
 
+        public Builder TotalShards(int totalShards) {
+            if (totalShards < 1) {
+                Logger.warning("Total shards must be at least 1. Defaulting to " + DEFAULT_TOTAL_SHARDS);
+                this.totalShards = DEFAULT_TOTAL_SHARDS;
+            } else {
+                this.totalShards = totalShards;
+            }
+            return this;
+        }
+
+        public Builder ShardThreadPools(List<Executor> shardThreadPools) {
+            this.shardThreadPools = shardThreadPools;
+            return this;
+        }
+
         public Config Build() {
+            if (token == null || token.isBlank()) {
+                throw new IllegalArgumentException("Token must be specified.");
+            }
             return new Config(this);
         }
     }
 
-    // Setter for token (only mutable field)
     public void token(String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("Token cannot be null or blank.");
@@ -152,7 +178,6 @@ public class Config {
         this.token = token;
     }
 
-    // Getters
     public String token() {
         return token;
     }
@@ -211,5 +236,13 @@ public class Config {
 
     public int getRetries(int defaultValue) {
         return retries > 0 ? retries : defaultValue;
+    }
+
+    public int getTotalShards(int defaultValue) {
+        return totalShards > 0 ? totalShards : defaultValue;
+    }
+
+    public Executor getShardThreadPool(int shardId) {
+        return shardThreadPools.size() > shardId ? shardThreadPools.get(shardId) : null;
     }
 }

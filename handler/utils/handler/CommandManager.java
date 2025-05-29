@@ -1,6 +1,5 @@
 package org.bunnys.handler.utils.handler;
 
-import org.bunnys.handler.GBF;
 import org.bunnys.handler.commands.CommandLoader;
 import org.bunnys.handler.commands.message.config.MessageCommand;
 import org.bunnys.handler.config.Config;
@@ -10,11 +9,13 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 public class CommandManager {
     private static final int DEFAULT_TIMEOUT_SECONDS = 5;
     private final Config config;
+    private final Executor shardPool;
 
     private final ConcurrentHashMap<String, MessageCommand> messageCommands = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> aliases = new ConcurrentHashMap<>();
@@ -23,6 +24,7 @@ public class CommandManager {
 
     public CommandManager(Config config) {
         this.config = config;
+        this.shardPool = config.getShardThreadPool(0); // Use first shard's thread pool for command loading
     }
 
     public CompletableFuture<Void> registerCommandsAsync() {
@@ -34,12 +36,12 @@ public class CommandManager {
             return CompletableFuture.completedFuture(null);
         }
 
-        return CompletableFuture.supplyAsync(() -> CommandLoader.loadCommands(config.CommandsFolder(), config), GBF.SHARED_POOL)
+        return CompletableFuture.supplyAsync(() -> CommandLoader.loadCommands(config.CommandsFolder(), config, shardPool), shardPool)
                 .thenCompose(commands -> {
                     CompletableFuture<?>[] futures = commands.entrySet().stream()
                             .map(entry -> CompletableFuture.runAsync(() -> {
                                         messageCommands.put(entry.getKey(), entry.getValue());
-                                    }, GBF.SHARED_POOL)
+                                    }, shardPool)
                                     .orTimeout(config.getTimeoutSeconds(DEFAULT_TIMEOUT_SECONDS), TimeUnit.SECONDS)
                                     .exceptionally(throwable -> {
                                         Logger.error("Failed to load command " + entry.getKey() + ": " + throwable.getMessage());
@@ -69,7 +71,7 @@ public class CommandManager {
 
         return commandsLoadedFuture
                 .orTimeout(config.getTimeoutSeconds(DEFAULT_TIMEOUT_SECONDS), TimeUnit.SECONDS)
-                .thenApplyAsync(__ -> messageCommands.get(name), GBF.SHARED_POOL)
+                .thenApplyAsync(__ -> messageCommands.get(name), shardPool)
                 .exceptionally(throwable -> {
                     Logger.error("Command loading timed out or failed: " + throwable.getMessage());
                     return null;

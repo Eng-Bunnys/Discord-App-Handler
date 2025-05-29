@@ -16,9 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 public class CommandLoader {
-    private static final Executor SHARED_POOL = GBF.SHARED_POOL;
-
-    public static ConcurrentHashMap<String, MessageCommand> loadCommands(String packageName, Config config) {
+    public static ConcurrentHashMap<String, MessageCommand> loadCommands(String packageName, Config config, Executor shardPool) {
         if (packageName == null || packageName.isBlank()) {
             throw new IllegalArgumentException("Package name cannot be null or blank");
         }
@@ -92,13 +90,13 @@ public class CommandLoader {
                             }
                         });
                 return null;
-            }, SHARED_POOL).get();
+            }, shardPool).get();
 
             if (messageCommands.isEmpty()) {
                 throw new IllegalStateException("No commands found in package: " + packageName);
             }
 
-            GBF client = GBF.getClient();
+            GBF client = new GBF(config);
             aliasMap.forEach((cmd, aliasSet) -> {
                 if (!aliasSet.isEmpty()) {
                     client.setAlias(cmd, aliasSet.toArray(new String[0]));
